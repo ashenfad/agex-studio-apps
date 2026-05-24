@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Agex Studio App Sandbox</title>
+    <meta name="description" content="Cross-origin sandbox host for agex.studio agent-generated apps.">
+    <meta name="robots" content="noindex,nofollow">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background: #0d0e11;
+            color: #888;
+            font-family: system-ui, sans-serif;
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="status">Loading app...</div>
+
+    <script>
+        /**
+         * Bootloader for agex.studio's cross-origin app sandbox.
+         *
+         * This page lives at apps.agex.studio (a separate origin from
+         * agex.studio). The studio renders it inside an iframe, then
+         * posts the actual app HTML over postMessage. The bootloader
+         * receives that HTML and replaces the document with it via
+         * `document.open()` + `document.write()`.
+         *
+         * Why this exists: the studio's earlier sandbox approach used
+         * `sandbox="allow-scripts"` on a blob-URL iframe, which gave
+         * the iframe an opaque origin. Opaque origins can't be granted
+         * persistent permissions (camera, mic, geolocation), can't
+         * read cross-origin stylesheets with `crossorigin`, and hit a
+         * long tail of subtle restrictions (Referer-restricted tile
+         * servers, etc.). Moving the iframe to a real, separate origin
+         * resolves all of that — and the origin separation is what
+         * provides the isolation that the sandbox attribute used to.
+         *
+         * Apps cannot reach into agex.studio's storage, settings, or
+         * IndexedDB because cross-origin same-origin policy blocks
+         * them. Communication is strictly via postMessage with origin
+         * validation on both sides.
+         */
+        (function () {
+            'use strict';
+
+            // Origins allowed to send the init payload. Add more as
+            // needed for local dev, preview deploys, etc.
+            var APPROVED_PARENT_ORIGINS = [
+                'https://agex.studio',
+                // GitHub Pages preview URL (in case prod custom-domain is mid-DNS-rollover)
+                'https://ashenfad.github.io',
+                // Local dev (vite default port)
+                'http://localhost:5173',
+                'http://127.0.0.1:5173',
+                // Local preview (`vite preview` default)
+                'http://localhost:4173',
+                'http://127.0.0.1:4173',
+            ];
+
+            var initReceived = false;
+
+            function onMessage(event) {
+                if (event.data && event.data.type === 'agex-host-init') {
+                    if (initReceived) return;
+                    if (APPROVED_PARENT_ORIGINS.indexOf(event.origin) === -1) {
+                        // Don't render arbitrary HTML from unknown origins.
+                        // Quietly ignore — logging would leak the attempt
+                        // to a malicious parent.
+                        return;
+                    }
+                    if (typeof event.data.html !== 'string') return;
+                    initReceived = true;
+                    window.removeEventListener('message', onMessage);
+
+                    // Stash the parent's origin so injected scripts in
+                    // the rendered HTML (query bridge, storage shim,
+                    // control bridge, etc.) can target it specifically
+                    // for postMessage rather than using '*'.
+                    window.__AGEX_PARENT_ORIGIN = event.origin;
+
+                    // Replace the document with the app HTML. After
+                    // document.close() the new doc's scripts execute
+                    // synchronously and the app boots. window-level
+                    // globals (including __AGEX_PARENT_ORIGIN) survive
+                    // because document.open() only resets the document,
+                    // not the window.
+                    document.open();
+                    document.write(event.data.html);
+                    document.close();
+                }
+            }
+
+            window.addEventListener('message', onMessage);
+
+            // Tell the parent we're ready to receive the init payload.
+            // Target origin '*' here is necessary because the parent's
+            // origin isn't known yet — this is a no-data ping that
+            // says "post me the html." The parent validates that the
+            // 'ready' originated from our iframe by source identity,
+            // not message content.
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'agex-host-ready' }, '*');
+            }
+        })();
+    </script>
+</body>
+</html>
