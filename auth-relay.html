@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Signing in…</title>
+    <meta name="description" content="OAuth redirect relay for agex.studio agent-generated apps.">
+    <meta name="robots" content="noindex,nofollow">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background: #0d0e11;
+            color: #888;
+            font-family: system-ui, sans-serif;
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            font-size: 0.85rem;
+            text-align: center;
+            padding: 0 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="status">Completing sign-in… you can close this window.</div>
+
+    <script>
+        /**
+         * OAuth redirect relay for agex.studio's app sandbox.
+         *
+         * This page lives at apps.agex.studio (the same origin as the
+         * agent-generated apps). It is the landing spot for the FINAL
+         * hop of a popup-based OAuth flow — e.g. Supabase redirecting
+         * back after `signInWithOAuth({ provider: 'google' })`.
+         *
+         * Why a relay exists: the app itself is served by the bootloader
+         * (index.html) via document.write, so a top-level navigation
+         * back into the app would reload the bootloader and lose all app
+         * state. Instead the app runs the OAuth flow in a POPUP whose
+         * redirect_to points here. This page reads the return params off
+         * its own URL, hands them back to the still-running app over a
+         * same-origin channel, and closes. The app never navigates away.
+         *
+         * Same-origin only: the app iframe and this relay both live on
+         * apps.agex.studio, so a same-origin BroadcastChannel reaches the
+         * app without depending on window.opener (which COOP can sever).
+         * The app is responsible for verifying the OAuth `state` value it
+         * receives matches the one it generated.
+         */
+        (function () {
+            'use strict';
+
+            // OAuth providers return params in the query string (PKCE:
+            // ?code&state) and/or the fragment (implicit: #access_token&
+            // refresh_token). Collect both; the app picks what it needs.
+            function collect(str) {
+                var out = {};
+                if (!str) return out;
+                var params = new URLSearchParams(str.replace(/^[?#]/, ''));
+                params.forEach(function (value, key) { out[key] = value; });
+                return out;
+            }
+
+            var payload = {
+                type: 'agex-oauth-return',
+                params: Object.assign(
+                    {},
+                    collect(window.location.search),
+                    collect(window.location.hash),
+                ),
+            };
+
+            // Primary path: same-origin BroadcastChannel. The app listens
+            // on the same channel name; this does not rely on opener.
+            try {
+                var channel = new BroadcastChannel('agex-oauth');
+                channel.postMessage(payload);
+                channel.close();
+            } catch (e) {
+                // BroadcastChannel unavailable — fall through to opener.
+            }
+
+            // Belt-and-suspenders: also post to the opener if present.
+            // Same-origin target only (the app iframe shares this
+            // origin) — never '*', so the payload can't leak to a
+            // cross-origin opener.
+            try {
+                if (window.opener && window.opener !== window) {
+                    window.opener.postMessage(payload, window.location.origin);
+                }
+            } catch (e) {
+                // Opener gone or cross-origin — ignore.
+            }
+
+            // We were opened via window.open(), so closing ourselves is
+            // permitted. If the browser refuses, the status text above
+            // tells the user they can close it.
+            window.close();
+        })();
+    </script>
+</body>
+</html>
