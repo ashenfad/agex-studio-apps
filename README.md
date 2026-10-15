@@ -23,10 +23,10 @@ Moving the iframe to a real cross-origin domain (`apps.agex.studio`) resolves al
 ## Protocol
 
 1. The studio creates an iframe with `src="https://apps.agex.studio/"`.
-2. This page loads, runs its inline script, and posts `{ type: 'agex-host-ready' }` to its parent.
-3. The studio receives the ready signal, then posts `{ type: 'agex-host-init', html: '<app html>' }` to the iframe.
-4. This page validates the message's origin against an allowlist (`agex.studio` for prod, `localhost:5173` for dev), then replaces its document with the received HTML via `document.open()` / `document.write()` / `document.close()`.
-5. The app's injected scripts (query bridge, storage shim, control bridge — added by the studio's `buildAppHtml`) use `window.__AGEX_PARENT_ORIGIN` (set by this page) to target `postMessage`s back to `agex.studio` specifically rather than `*`.
+2. This page loads, runs its inline script, and posts `{ type: 'agex-host-ready', assets: 1 }` to its parent (`assets: 1`: the init may carry assets).
+3. The studio receives the ready signal, then posts `{ type: 'agex-host-init', html: '<app html>', assets: [Blob, ...] }` to the iframe. `assets` is optional: the app's images, audio, fonts and data files, each once, which the HTML names by token (`agex-asset:<n>:` for `assets[n]`).
+4. This page validates the message's origin against an allowlist (`agex.studio` for prod, `localhost:5173` for dev), mints a `blob:` URL for each asset and puts it in place of its token, then replaces its document with the HTML via `document.open()` / `document.write()` / `document.close()`. The blob URLs belong to this window, which `document.open()` keeps, so they serve the app.
+5. The app's injected scripts (query bridge, storage shim, control bridge — added by the studio's `buildAppPage`) use `window.__AGEX_PARENT_ORIGIN` (set by this page) to target `postMessage`s back to `agex.studio` specifically rather than `*`.
 
 ## Local development
 
