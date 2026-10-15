@@ -84,6 +84,25 @@
                     initReceived = true;
                     window.removeEventListener('message', onMessage);
 
+                    // The app's assets (images, audio, fonts, data
+                    // files) come beside the HTML as Blobs, each once,
+                    // and the HTML names each by a token,
+                    // `agex-asset:<n>:`. A blob: URL minted here
+                    // belongs to this window, which document.open()
+                    // keeps, so it serves the app the page becomes;
+                    // the parent's own blob: URLs wouldn't (another
+                    // origin's).
+                    var html = event.data.html;
+                    var assets = event.data.assets;
+                    if (Array.isArray(assets) && assets.length > 0) {
+                        var urls = assets.map(function (blob) {
+                            return blob instanceof Blob ? URL.createObjectURL(blob) : null;
+                        });
+                        html = html.replace(/agex-asset:(\d+):/g, function (token, n) {
+                            return urls[Number(n)] || token;
+                        });
+                    }
+
                     // Stash the parent's origin so injected scripts in
                     // the rendered HTML (query bridge, storage shim,
                     // control bridge, etc.) can target it specifically
@@ -97,7 +116,7 @@
                     // because document.open() only resets the document,
                     // not the window.
                     document.open();
-                    document.write(event.data.html);
+                    document.write(html);
                     document.close();
                 }
             }
@@ -109,9 +128,11 @@
             // origin isn't known yet — this is a no-data ping that
             // says "post me the html." The parent validates that the
             // 'ready' originated from our iframe by source identity,
-            // not message content.
+            // not message content. `assets: 1` says the init may carry
+            // the app's assets as Blobs (a parent that doesn't know it
+            // writes them into the HTML as data: URLs instead).
             if (window.parent && window.parent !== window) {
-                window.parent.postMessage({ type: 'agex-host-ready' }, '*');
+                window.parent.postMessage({ type: 'agex-host-ready', assets: 1 }, '*');
             }
         })();
     </script>
