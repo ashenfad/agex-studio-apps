@@ -1,0 +1,24 @@
+# Tells agex-studio/agex-studio.github.io to publish a fresh copy of
+# this site. That copy is the origin test_app's hidden test frames load
+# from, so it has to keep up with what this repo serves.
+#
+# Needs the secret TEST_ORIGIN_DISPATCH_TOKEN: a fine-grained token for
+# the agex-studio org, limited to agex-studio.github.io, with Contents
+# read and write (what a repository_dispatch requires).
+name: Update the test origin
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask agex-studio.github.io to redeploy
+        env:
+          GH_TOKEN: ${{ secrets.TEST_ORIGIN_DISPATCH_TOKEN }}
+        run: gh api repos/agex-studio/agex-studio.github.io/dispatches -f event_type=apps-updated
